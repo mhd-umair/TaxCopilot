@@ -1,0 +1,223 @@
+@page "/audit"
+@inject TaxCopilotApiClient ApiClient
+@inject ISnackbar Snackbar
+
+<PageTitle>Audit Logs - TaxCopilot</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-1">Audit Logs</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">View query history and system activity</MudText>
+
+<MudPaper Class="pa-6" Elevation="2">
+    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudText Typo="Typo.h6">Recent Queries</MudText>
+            @if (_auditLogs != null)
+            {
+                <MudChip T="string" Size="Size.Small" Color="Color.Default">@_auditLogs.Count entries</MudChip>
+            }
+        </MudStack>
+        <MudStack Row="true" Spacing="2">
+            <MudSelect @bind-Value="_takeCount" Label="Show" Variant="Variant.Outlined" Dense="true" Style="width: 100px;">
+                <MudSelectItem Value="25">25</MudSelectItem>
+                <MudSelectItem Value="50">50</MudSelectItem>
+                <MudSelectItem Value="100">100</MudSelectItem>
+            </MudSelect>
+            <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Primary" 
+                       OnClick="RefreshAsync" Disabled="_loading">
+                @if (_loading)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                }
+                Refresh
+            </MudButton>
+        </MudStack>
+    </MudStack>
+
+    @if (_loading)
+    {
+        <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="400px" />
+    }
+    else if (_auditLogs != null && _auditLogs.Any())
+    {
+        <MudTable Items="_auditLogs" Dense="true" Hover="true" Striped="true" FixedHeader="true" Height="500px"
+                  RowClassFunc="@((item, index) => item == _selectedLog ? "mud-primary-text" : "")">
+            <HeaderContent>
+                <MudTh Style="width: 150px;">Time</MudTh>
+                <MudTh>Question</MudTh>
+                <MudTh Style="width: 120px;">Model</MudTh>
+                <MudTh Style="width: 100px;">Latency</MudTh>
+                <MudTh Style="width: 80px;">Status</MudTh>
+                <MudTh Style="width: 100px;">Actions</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Time">
+                    <MudText Typo="Typo.caption">@context.CreatedAt.LocalDateTime.ToString("g")</MudText>
+                </MudTd>
+                <MudTd DataLabel="Question">
+                    <MudText Typo="Typo.body2" Style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        @context.QuestionSnippet
+                    </MudText>
+                </MudTd>
+                <MudTd DataLabel="Model">
+                    <MudChip T="string" Size="Size.Small" Color="Color.Default">@context.Model</MudChip>
+                </MudTd>
+                <MudTd DataLabel="Latency">
+                    <MudText Typo="Typo.body2">@FormatLatency(context.LatencyMs)</MudText>
+                </MudTd>
+                <MudTd DataLabel="Status">
+                    @if (string.IsNullOrEmpty(context.ErrorMessage))
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" Color="Color.Success" />
+                    }
+                    else
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Error" Size="Size.Small" Color="Color.Error" />
+                    }
+                </MudTd>
+                <MudTd DataLabel="Actions">
+                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Size="Size.Small" 
+                                   OnClick="@(() => ToggleDetails(context))" Title="View details" />
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        @if (_selectedLog != null)
+        {
+            <MudDivider Class="my-4" />
+            <MudPaper Class="pa-4" Elevation="0" Style="background: #f8fafc;">
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Start" Class="mb-4">
+                    <MudText Typo="Typo.h6">Query Details</MudText>
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="CloseDetails" />
+                </MudStack>
+
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">Question</MudText>
+                        <MudPaper Class="pa-3" Elevation="0" Style="background: white;">
+                            <MudText Typo="Typo.body2" Style="white-space: pre-wrap;">@_selectedLog.QueryText</MudText>
+                        </MudPaper>
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">Metadata</MudText>
+                        <MudSimpleTable Dense="true">
+                            <tbody>
+                                <tr><td>Correlation ID</td><td><code>@_selectedLog.CorrelationId</code></td></tr>
+                                <tr><td>Model</td><td>@_selectedLog.Model</td></tr>
+                                <tr><td>Prompt Version</td><td>@_selectedLog.PromptVersion</td></tr>
+                                <tr><td>Latency</td><td>@FormatLatency(_selectedLog.LatencyMs)</td></tr>
+                                <tr><td>Time</td><td>@_selectedLog.CreatedAt.LocalDateTime.ToString("F")</td></tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudItem>
+
+                    <MudItem xs="12">
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">Answer</MudText>
+                        <MudPaper Class="pa-3" Elevation="0" Style="background: white; max-height: 200px; overflow-y: auto;">
+                            <MudText Typo="Typo.body2" Style="white-space: pre-wrap;">@(_selectedLog.AnswerText ?? "No answer")</MudText>
+                        </MudPaper>
+                    </MudItem>
+
+                    @if (!string.IsNullOrEmpty(_selectedLog.FiltersJson))
+                    {
+                        <MudItem xs="12" md="6">
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">Filters</MudText>
+                            <pre class="json-display">@FormatJson(_selectedLog.FiltersJson)</pre>
+                        </MudItem>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_selectedLog.RetrievedChunksJson))
+                    {
+                        <MudItem xs="12" md="@(string.IsNullOrEmpty(_selectedLog.FiltersJson) ? 12 : 6)">
+                            <MudText Typo="Typo.subtitle2" Class="mb-2">Retrieved Chunks</MudText>
+                            <pre class="json-display" style="max-height: 200px; overflow-y: auto;">@FormatJson(_selectedLog.RetrievedChunksJson)</pre>
+                        </MudItem>
+                    }
+
+                    @if (!string.IsNullOrEmpty(_selectedLog.ErrorMessage))
+                    {
+                        <MudItem xs="12">
+                            <MudAlert Severity="Severity.Error">
+                                <MudText Typo="Typo.subtitle2">Error</MudText>
+                                <MudText Typo="Typo.body2">@_selectedLog.ErrorMessage</MudText>
+                            </MudAlert>
+                        </MudItem>
+                    }
+                </MudGrid>
+            </MudPaper>
+        }
+    }
+    else
+    {
+        <MudAlert Severity="Severity.Info">No audit logs found. Ask a question to generate logs.</MudAlert>
+    }
+</MudPaper>
+
+@code {
+    private bool _loading;
+    private int _takeCount = 50;
+    private List<AuditLogDto>? _auditLogs;
+    private AuditLogDto? _selectedLog;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        _loading = true;
+        _selectedLog = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await ApiClient.GetAuditLogsAsync(_takeCount);
+            if (result.IsSuccess)
+            {
+                _auditLogs = result.Data;
+            }
+            else
+            {
+                Snackbar.Add($"Failed to load audit logs: {result.ErrorMessage}", Severity.Error);
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ToggleDetails(AuditLogDto log)
+    {
+        _selectedLog = _selectedLog == log ? null : log;
+    }
+
+    private void CloseDetails()
+    {
+        _selectedLog = null;
+    }
+
+    private string FormatLatency(int ms)
+    {
+        if (ms < 1000) return $"{ms}ms";
+        return $"{ms / 1000.0:F1}s";
+    }
+
+    private string FormatJson(string json)
+    {
+        try
+        {
+            var doc = System.Text.Json.JsonDocument.Parse(json);
+            return System.Text.Json.JsonSerializer.Serialize(doc, new System.Text.Json.JsonSerializerOptions 
+            { 
+                WriteIndented = true 
+            });
+        }
+        catch
+        {
+            return json;
+        }
+    }
+}
+

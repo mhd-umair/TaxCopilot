@@ -1,0 +1,144 @@
+@page "/settings"
+@inject IConfiguration Configuration
+@inject ISnackbar Snackbar
+
+<PageTitle>Settings - TaxCopilot</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-1">Settings</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">Configure application settings</MudText>
+
+<MudGrid>
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-6" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-4">API Configuration</MudText>
+
+            <MudStack Spacing="3">
+                <MudTextField Value="_apiBaseUrl" Label="API Base URL" Variant="Variant.Outlined" 
+                              ReadOnly="true" Adornment="Adornment.End" 
+                              AdornmentIcon="@Icons.Material.Filled.Lock" AdornmentColor="Color.Secondary" />
+
+                <MudTextField Value="_environment" Label="Environment" Variant="Variant.Outlined" 
+                              ReadOnly="true" />
+
+                <MudAlert Severity="Severity.Info" Dense="true">
+                    <MudText Typo="Typo.body2">
+                        API settings are configured via <code>appsettings.json</code> or environment variables.
+                    </MudText>
+                </MudAlert>
+            </MudStack>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-6" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-4">Current Configuration</MudText>
+
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead>
+                    <tr>
+                        <th>Setting</th>
+                        <th>Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>API Base URL</td>
+                        <td><code>@_apiBaseUrl</code></td>
+                    </tr>
+                    <tr>
+                        <td>Environment</td>
+                        <td><MudChip T="string" Size="Size.Small" Color="@GetEnvColor(_environment)">@_environment</MudChip></td>
+                    </tr>
+                    <tr>
+                        <td>UI Version</td>
+                        <td><code>1.0.0</code></td>
+                    </tr>
+                    <tr>
+                        <td>Framework</td>
+                        <td>.NET 8 + Blazor Server</td>
+                    </tr>
+                    <tr>
+                        <td>UI Library</td>
+                        <td>MudBlazor 7.x</td>
+                    </tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudPaper Class="pa-6" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-4">About TaxCopilot</MudText>
+
+            <MudGrid>
+                <MudItem xs="12" md="6">
+                    <MudText Typo="Typo.body1" Class="mb-4">
+                        TaxCopilot is an Azure-powered RAG (Retrieval-Augmented Generation) system for tax document analysis. 
+                        It enables intelligent search and question-answering over your tax document library.
+                    </MudText>
+
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Key Features</MudText>
+                    <MudList T="string" Dense="true">
+                        <MudListItem Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                            PDF and DOCX document ingestion
+                        </MudListItem>
+                        <MudListItem Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                            Azure AI Search with vector embeddings
+                        </MudListItem>
+                        <MudListItem Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                            Grounded answers with citations
+                        </MudListItem>
+                        <MudListItem Icon="@Icons.Material.Filled.Check" IconColor="Color.Success">
+                            Full audit trail of queries
+                        </MudListItem>
+                    </MudList>
+                </MudItem>
+
+                <MudItem xs="12" md="6">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Technology Stack</MudText>
+                    <MudStack Spacing="1">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@Icons.Material.Filled.Api" Size="Size.Small" Color="Color.Primary" />
+                            <MudText Typo="Typo.body2">.NET 8 Web API</MudText>
+                        </MudStack>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@Icons.Material.Filled.Storage" Size="Size.Small" Color="Color.Primary" />
+                            <MudText Typo="Typo.body2">Azure SQL + Dapper</MudText>
+                        </MudStack>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@Icons.Material.Filled.Search" Size="Size.Small" Color="Color.Primary" />
+                            <MudText Typo="Typo.body2">Azure AI Search (Vector + Hybrid)</MudText>
+                        </MudStack>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@Icons.Material.Filled.Psychology" Size="Size.Small" Color="Color.Primary" />
+                            <MudText Typo="Typo.body2">Azure OpenAI (GPT-4o + Embeddings)</MudText>
+                        </MudStack>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@Icons.Material.Filled.Cloud" Size="Size.Small" Color="Color.Primary" />
+                            <MudText Typo="Typo.body2">Azure Blob Storage</MudText>
+                        </MudStack>
+                    </MudStack>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private string _apiBaseUrl = "";
+    private string _environment = "DEV";
+
+    protected override void OnInitialized()
+    {
+        _apiBaseUrl = Configuration.GetValue<string>("ApiSettings:BaseUrl") ?? "https://localhost:5001";
+        _environment = Configuration.GetValue<string>("ApiSettings:Environment") ?? "DEV";
+    }
+
+    private Color GetEnvColor(string env) => env.ToUpper() switch
+    {
+        "PROD" or "PRODUCTION" => Color.Success,
+        "TEST" or "STAGING" => Color.Info,
+        _ => Color.Warning
+    };
+}
+

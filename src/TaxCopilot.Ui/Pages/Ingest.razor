@@ -1,0 +1,270 @@
+@page "/ingest"
+@inject TaxCopilotApiClient ApiClient
+@inject ISnackbar Snackbar
+
+<PageTitle>Ingest - TaxCopilot</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-1">Document Ingestion</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">Extract, chunk, embed, and index documents into Azure AI Search</MudText>
+
+<MudGrid>
+    @* Ingest Form *@
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-6" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-4">Start Ingestion</MudText>
+
+            <MudStack Spacing="3">
+                <MudTextField @bind-Value="_documentId" Label="Document ID" Variant="Variant.Outlined" 
+                              Placeholder="Enter the Document ID (GUID)"
+                              HelperText="Copy the Document ID from the Documents page after uploading" />
+
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" 
+                           OnClick="IngestAsync" Disabled="_ingesting || string.IsNullOrWhiteSpace(_documentId)">
+                    @if (_ingesting)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        <span>Ingesting... This may take a minute</span>
+                    }
+                    else
+                    {
+                        <span>Ingest Document</span>
+                    }
+                </MudButton>
+
+                @if (_ingesting)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true">
+                        <MudStack Spacing="1">
+                            <MudText Typo="Typo.body2">@_statusMessage</MudText>
+                            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                        </MudStack>
+                    </MudAlert>
+                }
+
+                @if (_ingestResult != null)
+                {
+                    <MudAlert Severity="Severity.Success">
+                        <MudText Typo="Typo.body1" Class="mb-2"><strong>Ingestion Complete!</strong></MudText>
+                        <MudSimpleTable Dense="true" Hover="true" Style="background: transparent;">
+                            <tbody>
+                                <tr>
+                                    <td><MudText Typo="Typo.body2">Document ID</MudText></td>
+                                    <td><MudText Typo="Typo.body2"><code>@_ingestResult.DocumentId</code></MudText></td>
+                                </tr>
+                                <tr>
+                                    <td><MudText Typo="Typo.body2">Chunks Created</MudText></td>
+                                    <td><MudText Typo="Typo.body2"><strong>@_ingestResult.ChunksCreated</strong></MudText></td>
+                                </tr>
+                                <tr>
+                                    <td><MudText Typo="Typo.body2">Chunks Indexed</MudText></td>
+                                    <td><MudText Typo="Typo.body2"><strong>@_ingestResult.ChunksIndexed</strong></MudText></td>
+                                </tr>
+                                <tr>
+                                    <td><MudText Typo="Typo.body2">Elapsed Time</MudText></td>
+                                    <td><MudText Typo="Typo.body2">@FormatElapsedTime(_ingestResult.ElapsedMs)</MudText></td>
+                                </tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudAlert>
+                }
+
+                @if (!string.IsNullOrEmpty(_errorMessage))
+                {
+                    <MudAlert Severity="Severity.Error">@_errorMessage</MudAlert>
+                }
+            </MudStack>
+        </MudPaper>
+    </MudItem>
+
+    @* Instructions *@
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-6" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-4">How Ingestion Works</MudText>
+
+            <MudTimeline TimelinePosition="TimelinePosition.Start">
+                <MudTimelineItem Color="Color.Primary" Size="Size.Small">
+                    <MudText Typo="Typo.subtitle2">1. Download</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Document is retrieved from Azure Blob Storage</MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Primary" Size="Size.Small">
+                    <MudText Typo="Typo.subtitle2">2. Extract</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Text is extracted page-by-page using PdfPig (PDF) or OpenXml (DOCX)</MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Primary" Size="Size.Small">
+                    <MudText Typo="Typo.subtitle2">3. Chunk</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Text is split into ~3,500 character chunks with overlap, preserving page numbers</MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Primary" Size="Size.Small">
+                    <MudText Typo="Typo.subtitle2">4. Embed</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Each chunk is converted to a vector using Azure OpenAI embeddings</MudText>
+                </MudTimelineItem>
+                <MudTimelineItem Color="Color.Success" Size="Size.Small">
+                    <MudText Typo="Typo.subtitle2">5. Index</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Chunks with embeddings are upserted to Azure AI Search</MudText>
+                </MudTimelineItem>
+            </MudTimeline>
+
+            <MudDivider Class="my-4" />
+
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Tips</MudText>
+            <MudList T="string" Dense="true">
+                <MudListItem Icon="@Icons.Material.Filled.Info" IconSize="Size.Small" IconColor="Color.Info">
+                    Ingestion can take 30 seconds to several minutes depending on document size
+                </MudListItem>
+                <MudListItem Icon="@Icons.Material.Filled.Info" IconSize="Size.Small" IconColor="Color.Info">
+                    Re-ingesting a document will replace existing chunks
+                </MudListItem>
+                <MudListItem Icon="@Icons.Material.Filled.Info" IconSize="Size.Small" IconColor="Color.Info">
+                    Only PDF and DOCX formats are supported
+                </MudListItem>
+            </MudList>
+        </MudPaper>
+    </MudItem>
+
+    @* Recent Documents for Quick Access *@
+    <MudItem xs="12">
+        <MudPaper Class="pa-6" Elevation="2">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+                <MudText Typo="Typo.h6">Recent Documents</MudText>
+                <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="RefreshDocumentsAsync">Refresh</MudButton>
+            </MudStack>
+
+            @if (_loadingDocs)
+            {
+                <MudProgressLinear Indeterminate="true" />
+            }
+            else if (_documents != null && _documents.Any())
+            {
+                <MudTable Items="_documents.Take(5)" Dense="true" Hover="true">
+                    <HeaderContent>
+                        <MudTh>Title</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Chunks</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Title">@context.Title</MudTd>
+                        <MudTd DataLabel="Status">
+                            <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(context.Status)">@context.StatusText</MudChip>
+                        </MudTd>
+                        <MudTd DataLabel="Chunks">@(context.ChunkCount?.ToString() ?? "-")</MudTd>
+                        <MudTd DataLabel="Actions">
+                            <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary"
+                                       OnClick="@(() => SelectDocument(context.DocumentId))"
+                                       Disabled="@(context.Status == 1)">
+                                @(context.Status == 2 ? "Re-ingest" : "Ingest")
+                            </MudButton>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">No documents available. Upload a document first.</MudText>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private string _documentId = "";
+    private bool _ingesting;
+    private string _statusMessage = "";
+    private string? _errorMessage;
+    private IngestResponse? _ingestResult;
+    private bool _loadingDocs;
+    private List<DocumentDto>? _documents;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshDocumentsAsync();
+    }
+
+    private async Task IngestAsync()
+    {
+        if (!Guid.TryParse(_documentId.Trim(), out var docId))
+        {
+            Snackbar.Add("Invalid Document ID format", Severity.Warning);
+            return;
+        }
+
+        _ingesting = true;
+        _ingestResult = null;
+        _errorMessage = null;
+        _statusMessage = "Starting ingestion...";
+        StateHasChanged();
+
+        try
+        {
+            _statusMessage = "Downloading and extracting document...";
+            StateHasChanged();
+
+            var result = await ApiClient.IngestAsync(docId);
+
+            if (result.IsSuccess)
+            {
+                _ingestResult = result.Data;
+                Snackbar.Add($"Ingestion complete! {_ingestResult!.ChunksIndexed} chunks indexed.", Severity.Success);
+                await RefreshDocumentsAsync();
+            }
+            else
+            {
+                _errorMessage = result.ErrorMessage;
+                Snackbar.Add($"Ingestion failed: {result.ErrorMessage}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+            Snackbar.Add($"Ingestion failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _ingesting = false;
+            _statusMessage = "";
+        }
+    }
+
+    private async Task RefreshDocumentsAsync()
+    {
+        _loadingDocs = true;
+        StateHasChanged();
+
+        try
+        {
+            var result = await ApiClient.GetDocumentsAsync();
+            if (result.IsSuccess)
+            {
+                _documents = result.Data;
+            }
+        }
+        finally
+        {
+            _loadingDocs = false;
+        }
+    }
+
+    private void SelectDocument(Guid documentId)
+    {
+        _documentId = documentId.ToString();
+        _ingestResult = null;
+        _errorMessage = null;
+    }
+
+    private Color GetStatusColor(int status) => status switch
+    {
+        0 => Color.Default,
+        1 => Color.Warning,
+        2 => Color.Success,
+        3 => Color.Error,
+        _ => Color.Default
+    };
+
+    private string FormatElapsedTime(long ms)
+    {
+        if (ms < 1000) return $"{ms}ms";
+        if (ms < 60000) return $"{ms / 1000.0:F1}s";
+        return $"{ms / 60000.0:F1}m";
+    }
+}
+

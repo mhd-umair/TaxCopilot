@@ -1,0 +1,117 @@
+@inherits LayoutComponentBase
+@inject IConfiguration Configuration
+@inject CorrelationIdService CorrelationIdService
+
+<MudThemeProvider Theme="_theme" IsDarkMode="false" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1" Color="Color.Surface" Dense="true">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@ToggleDrawer" />
+        
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Color="Color.Primary" Size="Size.Medium" />
+            <MudText Typo="Typo.h6" Class="fw-bold" Style="color: #1e293b;">TaxCopilot</MudText>
+        </MudStack>
+
+        <MudSpacer />
+
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+            @if (!string.IsNullOrEmpty(CorrelationIdService.LastCorrelationId))
+            {
+                <MudTooltip Text="Last Request Correlation ID">
+                    <span class="correlation-id">@CorrelationIdService.LastCorrelationId</span>
+                </MudTooltip>
+            }
+            
+            <span class="env-badge @_envClass">@_environment</span>
+        </MudStack>
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen" Elevation="2" ClipMode="DrawerClipMode.Always" Variant="DrawerVariant.Mini" OpenMiniOnHover="true">
+        <MudNavMenu>
+            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+            <MudNavLink Href="/documents" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.CloudUpload">Documents</MudNavLink>
+            <MudNavLink Href="/ingest" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Settings">Ingest</MudNavLink>
+            <MudNavLink Href="/ask" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.QuestionAnswer">Ask</MudNavLink>
+            <MudNavLink Href="/audit" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.History">Audit</MudNavLink>
+            <MudDivider Class="my-2" />
+            <MudNavLink Href="/settings" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Tune">Settings</MudNavLink>
+        </MudNavMenu>
+    </MudDrawer>
+
+    <MudMainContent Class="pt-4">
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="px-6 pb-6">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _drawerOpen = true;
+    private string _environment = "DEV";
+    private string _envClass = "dev";
+
+    private readonly MudTheme _theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#2563eb",
+            Secondary = "#64748b",
+            Success = "#22c55e",
+            Info = "#3b82f6",
+            Warning = "#f59e0b",
+            Error = "#ef4444",
+            Background = "#f8fafc",
+            Surface = "#ffffff",
+            DrawerBackground = "#ffffff",
+            AppbarBackground = "#ffffff",
+            AppbarText = "#1e293b",
+            TextPrimary = "#1e293b",
+            TextSecondary = "#64748b"
+        },
+        Typography = new Typography
+        {
+            Default = new Default
+            {
+                FontFamily = new[] { "Plus Jakarta Sans", "Segoe UI", "Roboto", "sans-serif" }
+            },
+            H1 = new H1 { FontWeight = 700 },
+            H2 = new H2 { FontWeight = 700 },
+            H3 = new H3 { FontWeight = 600 },
+            H4 = new H4 { FontWeight = 600 },
+            H5 = new H5 { FontWeight = 600 },
+            H6 = new H6 { FontWeight = 600 }
+        },
+        LayoutProperties = new LayoutProperties
+        {
+            DefaultBorderRadius = "8px"
+        }
+    };
+
+    protected override void OnInitialized()
+    {
+        _environment = Configuration.GetValue<string>("ApiSettings:Environment") ?? "DEV";
+        _envClass = _environment.ToLower() switch
+        {
+            "prod" or "production" => "prod",
+            "test" or "staging" => "test",
+            _ => "dev"
+        };
+
+        CorrelationIdService.OnChange += StateHasChanged;
+    }
+
+    private void ToggleDrawer()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+
+    public void Dispose()
+    {
+        CorrelationIdService.OnChange -= StateHasChanged;
+    }
+}
+

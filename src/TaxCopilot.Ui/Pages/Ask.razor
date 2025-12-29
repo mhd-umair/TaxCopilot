@@ -1,0 +1,286 @@
+@page "/ask"
+@inject TaxCopilotApiClient ApiClient
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Ask - TaxCopilot</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-1">Ask a Question</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">Get answers from your indexed tax documents with citations</MudText>
+
+<MudGrid>
+    @* Chat Area *@
+    <MudItem xs="12" md="8">
+        <MudPaper Class="pa-0" Elevation="2" Style="height: calc(100vh - 220px); min-height: 500px; display: flex; flex-direction: column;">
+            @* Messages *@
+            <div class="chat-messages" @ref="_messagesContainer">
+                @if (!_messages.Any())
+                {
+                    <div class="text-center py-8">
+                        <MudIcon Icon="@Icons.Material.Filled.QuestionAnswer" Size="Size.Large" Color="Color.Secondary" />
+                        <MudText Typo="Typo.h6" Color="Color.Secondary" Class="mt-2">Ask your first question</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Get grounded answers from your indexed tax documents
+                        </MudText>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var message in _messages)
+                    {
+                        @if (message.IsUser)
+                        {
+                            <div class="user-message">
+                                @message.Text
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="assistant-message">
+                                @if (message.IsLoading)
+                                {
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                        <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                                        <MudText Typo="Typo.body2" Color="Color.Secondary">Thinking...</MudText>
+                                    </MudStack>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.body1" Class="mb-3" Style="white-space: pre-wrap;">@message.Text</MudText>
+
+                                    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="mb-3">
+                                        <MudChip T="string" Size="Size.Small" Class="@GetConfidenceClass(message.Confidence)">
+                                            @message.Confidence?.ToUpper() confidence
+                                        </MudChip>
+                                        <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small" 
+                                                       OnClick="@(() => CopyText(message.Text))" Title="Copy answer" />
+                                    </MudStack>
+
+                                    @if (message.Citations?.Any() == true)
+                                    {
+                                        <MudExpansionPanels Elevation="0">
+                                            <MudExpansionPanel Text="@($"Citations ({message.Citations.Count})")" Dense="true" Style="background: #f8fafc;">
+                                                <MudSimpleTable Dense="true" Hover="true">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Document</th>
+                                                            <th>Page</th>
+                                                            <th>Section</th>
+                                                            <th></th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        @foreach (var citation in message.Citations)
+                                                        {
+                                                            <tr>
+                                                                <td><MudText Typo="Typo.body2">@citation.DocumentTitle</MudText></td>
+                                                                <td><MudText Typo="Typo.body2">@citation.PageNumber</MudText></td>
+                                                                <td><MudText Typo="Typo.body2">@(citation.SectionHeading ?? "-")</MudText></td>
+                                                                <td>
+                                                                    <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small"
+                                                                                   OnClick="@(() => CopyText(citation.ChunkId))" Title="Copy Chunk ID" />
+                                                                </td>
+                                                            </tr>
+                                                        }
+                                                    </tbody>
+                                                </MudSimpleTable>
+                                            </MudExpansionPanel>
+                                        </MudExpansionPanels>
+                                    }
+                                }
+                            </div>
+                        }
+                    }
+                }
+            </div>
+
+            @* Input *@
+            <div class="chat-input">
+                <MudStack Row="true" Spacing="2">
+                    <MudTextField @bind-Value="_question" Label="Ask a question..." Variant="Variant.Outlined" 
+                                  FullWidth="true" OnKeyDown="OnKeyDown" Disabled="_isAsking" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="AskAsync" 
+                               Disabled="_isAsking || string.IsNullOrWhiteSpace(_question)"
+                               Style="height: 56px;">
+                        @if (_isAsking)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                        }
+                        else
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.Send" />
+                        }
+                    </MudButton>
+                </MudStack>
+            </div>
+        </MudPaper>
+    </MudItem>
+
+    @* Filters *@
+    <MudItem xs="12" md="4">
+        <MudPaper Class="pa-6" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-4">Filters</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                Narrow down results to specific documents
+            </MudText>
+
+            <MudStack Spacing="3">
+                <MudTextField @bind-Value="_filterJurisdiction" Label="Jurisdiction" Variant="Variant.Outlined" 
+                              Placeholder="e.g., UK, US, EU" Clearable="true" />
+                <MudTextField @bind-Value="_filterTaxType" Label="Tax Type" Variant="Variant.Outlined" 
+                              Placeholder="e.g., VAT, Income" Clearable="true" />
+                <MudTextField @bind-Value="_filterVersion" Label="Version" Variant="Variant.Outlined" 
+                              Placeholder="e.g., 2024" Clearable="true" />
+
+                <MudDivider Class="my-2" />
+
+                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" FullWidth="true" OnClick="ClearFilters">
+                    Clear Filters
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+
+        <MudPaper Class="pa-6 mt-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-4">Example Questions</MudText>
+            <MudStack Spacing="2">
+                @foreach (var example in _exampleQuestions)
+                {
+                    <MudButton Variant="Variant.Text" Size="Size.Small" FullWidth="true" 
+                               OnClick="@(() => SetQuestion(example))" Style="text-align: left; justify-content: flex-start;">
+                        <MudIcon Icon="@Icons.Material.Outlined.Lightbulb" Size="Size.Small" Class="mr-2" />
+                        @example
+                    </MudButton>
+                }
+            </MudStack>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private ElementReference _messagesContainer;
+    private string _question = "";
+    private bool _isAsking;
+    
+    private string _filterJurisdiction = "";
+    private string _filterTaxType = "";
+    private string _filterVersion = "";
+    
+    private readonly List<ChatMessage> _messages = new();
+    
+    private readonly string[] _exampleQuestions = new[]
+    {
+        "What is the standard VAT rate?",
+        "What are the penalties for late filing?",
+        "How are digital services taxed?",
+        "What are the exemptions for charities?"
+    };
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey && !string.IsNullOrWhiteSpace(_question))
+        {
+            await AskAsync();
+        }
+    }
+
+    private async Task AskAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_question) || _isAsking) return;
+
+        var questionText = _question.Trim();
+        _question = "";
+        _isAsking = true;
+
+        // Add user message
+        _messages.Add(new ChatMessage { IsUser = true, Text = questionText });
+        
+        // Add loading assistant message
+        var loadingMessage = new ChatMessage { IsUser = false, IsLoading = true };
+        _messages.Add(loadingMessage);
+        StateHasChanged();
+        await ScrollToBottom();
+
+        try
+        {
+            var filters = new QueryFilters();
+            if (!string.IsNullOrWhiteSpace(_filterJurisdiction)) filters.Jurisdiction = _filterJurisdiction;
+            if (!string.IsNullOrWhiteSpace(_filterTaxType)) filters.TaxType = _filterTaxType;
+            if (!string.IsNullOrWhiteSpace(_filterVersion)) filters.Version = _filterVersion;
+
+            var result = await ApiClient.AskAsync(
+                questionText,
+                (filters.Jurisdiction != null || filters.TaxType != null || filters.Version != null) ? filters : null);
+
+            // Update loading message with response
+            loadingMessage.IsLoading = false;
+
+            if (result.IsSuccess && result.Data != null)
+            {
+                loadingMessage.Text = result.Data.Answer;
+                loadingMessage.Confidence = result.Data.Confidence;
+                loadingMessage.Citations = result.Data.Citations;
+            }
+            else
+            {
+                loadingMessage.Text = $"Sorry, I encountered an error: {result.ErrorMessage}";
+                loadingMessage.Confidence = "low";
+            }
+        }
+        catch (Exception ex)
+        {
+            loadingMessage.IsLoading = false;
+            loadingMessage.Text = $"Sorry, I encountered an error: {ex.Message}";
+            loadingMessage.Confidence = "low";
+        }
+        finally
+        {
+            _isAsking = false;
+            StateHasChanged();
+            await ScrollToBottom();
+        }
+    }
+
+    private void SetQuestion(string question)
+    {
+        _question = question;
+    }
+
+    private void ClearFilters()
+    {
+        _filterJurisdiction = "";
+        _filterTaxType = "";
+        _filterVersion = "";
+    }
+
+    private async Task ScrollToBottom()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("eval", "document.querySelector('.chat-messages').scrollTop = document.querySelector('.chat-messages').scrollHeight");
+        }
+        catch { }
+    }
+
+    private async Task CopyText(string text)
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+        Snackbar.Add("Copied to clipboard!", Severity.Info);
+    }
+
+    private string GetConfidenceClass(string? confidence) => confidence?.ToLower() switch
+    {
+        "high" => "confidence-high",
+        "medium" => "confidence-medium",
+        _ => "confidence-low"
+    };
+
+    private class ChatMessage
+    {
+        public bool IsUser { get; set; }
+        public bool IsLoading { get; set; }
+        public string Text { get; set; } = "";
+        public string? Confidence { get; set; }
+        public List<Citation>? Citations { get; set; }
+    }
+}
+

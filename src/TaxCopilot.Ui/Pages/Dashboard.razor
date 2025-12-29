@@ -1,0 +1,206 @@
+@page "/"
+@inject TaxCopilotApiClient ApiClient
+@inject ISnackbar Snackbar
+
+<PageTitle>Dashboard - TaxCopilot</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-1">Dashboard</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">Monitor service health and manage system initialization</MudText>
+
+<MudGrid>
+    @* Service Health Card *@
+    <MudItem xs="12" md="8">
+        <MudPaper Class="pa-6 hover-lift" Elevation="2">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+                <MudText Typo="Typo.h6">Service Health</MudText>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Primary" 
+                           OnClick="RefreshHealthAsync" Disabled="_loading">
+                    @if (_loadingHealth)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    }
+                    Refresh
+                </MudButton>
+            </MudStack>
+
+            @if (_health != null)
+            {
+                <MudGrid Spacing="3">
+                    @foreach (var component in _health.Components)
+                    {
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudPaper Class="pa-4" Elevation="0" Style="background: #f8fafc; border-radius: 12px;">
+                                <MudStack Row="true" AlignItems="AlignItems.Center">
+                                    <span class="health-indicator @(component.Value.Healthy ? "healthy" : "unhealthy")"></span>
+                                    <MudStack Spacing="0">
+                                        <MudText Typo="Typo.subtitle2">@FormatComponentName(component.Key)</MudText>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">@component.Value.Message</MudText>
+                                    </MudStack>
+                                </MudStack>
+                            </MudPaper>
+                        </MudItem>
+                    }
+                </MudGrid>
+
+                <MudDivider Class="my-4" />
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudIcon Icon="@(_health.Status == "Healthy" ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)" 
+                             Color="@(_health.Status == "Healthy" ? Color.Success : Color.Error)" Size="Size.Small" />
+                    <MudText Typo="Typo.body2">
+                        Overall Status: <strong>@_health.Status</strong>
+                    </MudText>
+                </MudStack>
+            }
+            else if (_loadingHealth)
+            {
+                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="120px" />
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Info">Click refresh to check service health</MudAlert>
+            }
+        </MudPaper>
+    </MudItem>
+
+    @* Initialize Services Card *@
+    <MudItem xs="12" md="4">
+        <MudPaper Class="pa-6 hover-lift" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-4">Initialize Services</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                Create Azure resources if they don't exist (blob container, search index).
+            </MudText>
+
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" 
+                       OnClick="InitializeServicesAsync" Disabled="_loading">
+                @if (_loadingInit)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                }
+                Initialize Services
+            </MudButton>
+
+            @if (_initResult != null)
+            {
+                <MudAlert Severity="@(_initResult.Success ? Severity.Success : Severity.Error)" Class="mt-4" Dense="true">
+                    @if (_initResult.Success)
+                    {
+                        <span>Initialized successfully!</span>
+                        @if (_initResult.BlobContainerCreated)
+                        {
+                            <br /><small>• Blob container created</small>
+                        }
+                        @if (_initResult.SearchIndexCreated)
+                        {
+                            <br /><small>• Search index created</small>
+                        }
+                    }
+                    else
+                    {
+                        @_initResult.Message
+                    }
+                </MudAlert>
+            }
+        </MudPaper>
+    </MudItem>
+
+    @* Quick Stats *@
+    <MudItem xs="12">
+        <MudPaper Class="pa-6 hover-lift" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-4">Quick Actions</MudText>
+            <MudGrid>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" FullWidth="true" Href="/documents"
+                               StartIcon="@Icons.Material.Filled.CloudUpload" Class="py-4">
+                        Upload Document
+                    </MudButton>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" FullWidth="true" Href="/ingest"
+                               StartIcon="@Icons.Material.Filled.Settings" Class="py-4">
+                        Ingest Document
+                    </MudButton>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Info" FullWidth="true" Href="/ask"
+                               StartIcon="@Icons.Material.Filled.QuestionAnswer" Class="py-4">
+                        Ask a Question
+                    </MudButton>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudButton Variant="Variant.Outlined" Color="Color.Dark" FullWidth="true" Href="/audit"
+                               StartIcon="@Icons.Material.Filled.History" Class="py-4">
+                        View Audit Logs
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private bool _loading => _loadingHealth || _loadingInit;
+    private bool _loadingHealth;
+    private bool _loadingInit;
+    private HealthCheckResponse? _health;
+    private InitResponse? _initResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshHealthAsync();
+    }
+
+    private async Task RefreshHealthAsync()
+    {
+        _loadingHealth = true;
+        StateHasChanged();
+
+        try
+        {
+            var result = await ApiClient.GetHealthAsync();
+            if (result.IsSuccess)
+            {
+                _health = result.Data;
+            }
+            else
+            {
+                Snackbar.Add($"Failed to get health: {result.ErrorMessage}", Severity.Error);
+            }
+        }
+        finally
+        {
+            _loadingHealth = false;
+        }
+    }
+
+    private async Task InitializeServicesAsync()
+    {
+        _loadingInit = true;
+        _initResult = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await ApiClient.InitAsync();
+            if (result.IsSuccess)
+            {
+                _initResult = result.Data;
+                Snackbar.Add("Services initialized successfully!", Severity.Success);
+                await RefreshHealthAsync();
+            }
+            else
+            {
+                Snackbar.Add($"Initialization failed: {result.ErrorMessage}", Severity.Error);
+            }
+        }
+        finally
+        {
+            _loadingInit = false;
+        }
+    }
+
+    private string FormatComponentName(string name)
+    {
+        return name.Replace("_", " ").Replace("AzureOpenAI", "Azure OpenAI ");
+    }
+}
+

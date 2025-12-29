@@ -1,0 +1,286 @@
+@page "/documents"
+@inject TaxCopilotApiClient ApiClient
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+
+<PageTitle>Documents - TaxCopilot</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-1">Documents</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">Upload and manage tax documents</MudText>
+
+<MudGrid>
+    @* Upload Form *@
+    <MudItem xs="12" md="5">
+        <MudPaper Class="pa-6" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-4">Upload New Document</MudText>
+
+            <MudStack Spacing="3">
+                <MudFileUpload T="IBrowserFile" Accept=".pdf,.docx" FilesChanged="OnFileSelected" MaximumFileCount="1">
+                    <ActivatorContent>
+                        <MudPaper Outlined="true" Class="pa-8 text-center" Style="border-style: dashed; cursor: pointer;">
+                            <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Size="Size.Large" Color="Color.Primary" />
+                            <MudText Typo="Typo.body1" Class="mt-2">
+                                @if (_selectedFile != null)
+                                {
+                                    <strong>@_selectedFile.Name</strong>
+                                    <br /><small>@FormatFileSize(_selectedFile.Size)</small>
+                                }
+                                else
+                                {
+                                    <span>Click to select or drag a file here</span>
+                                    <br /><small>PDF or DOCX files only</small>
+                                }
+                            </MudText>
+                        </MudPaper>
+                    </ActivatorContent>
+                </MudFileUpload>
+
+                <MudTextField @bind-Value="_title" Label="Title" Variant="Variant.Outlined" Required="true" />
+
+                <MudGrid>
+                    <MudItem xs="6">
+                        <MudTextField @bind-Value="_jurisdiction" Label="Jurisdiction" Variant="Variant.Outlined" 
+                                      Placeholder="e.g., UK, US, EU" />
+                    </MudItem>
+                    <MudItem xs="6">
+                        <MudTextField @bind-Value="_taxType" Label="Tax Type" Variant="Variant.Outlined" 
+                                      Placeholder="e.g., VAT, Income" />
+                    </MudItem>
+                </MudGrid>
+
+                <MudGrid>
+                    <MudItem xs="6">
+                        <MudTextField @bind-Value="_version" Label="Version" Variant="Variant.Outlined" 
+                                      Placeholder="e.g., 2024" />
+                    </MudItem>
+                    <MudItem xs="6">
+                        <MudDatePicker @bind-Date="_effectiveDate" Label="Effective Date" Variant="Variant.Outlined" 
+                                       Editable="true" />
+                    </MudItem>
+                </MudGrid>
+
+                <MudTextField @bind-Value="_uploadedBy" Label="Uploaded By" Variant="Variant.Outlined" 
+                              Placeholder="your.email@company.com" />
+
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" 
+                           OnClick="UploadAsync" Disabled="_uploading || _selectedFile == null">
+                    @if (_uploading)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    }
+                    Upload Document
+                </MudButton>
+
+                @if (_uploadResult != null)
+                {
+                    <MudAlert Severity="Severity.Success" Dense="true">
+                        <MudStack Spacing="1">
+                            <MudText Typo="Typo.body2">Document uploaded successfully!</MudText>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                <MudText Typo="Typo.caption">ID: <code>@_uploadResult.DocumentId</code></MudText>
+                                <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small"
+                                               OnClick="@(() => CopyToClipboard(_uploadResult.DocumentId.ToString()))" />
+                            </MudStack>
+                        </MudStack>
+                    </MudAlert>
+                }
+            </MudStack>
+        </MudPaper>
+    </MudItem>
+
+    @* Documents List *@
+    <MudItem xs="12" md="7">
+        <MudPaper Class="pa-6" Elevation="2">
+            <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-4">
+                <MudText Typo="Typo.h6">Uploaded Documents</MudText>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Primary" 
+                           OnClick="RefreshDocumentsAsync" Disabled="_loadingDocs">
+                    @if (_loadingDocs)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    }
+                    Refresh
+                </MudButton>
+            </MudStack>
+
+            @if (_loadingDocs)
+            {
+                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="200px" />
+            }
+            else if (_documents != null && _documents.Any())
+            {
+                <MudTable Items="_documents" Dense="true" Hover="true" Striped="true" FixedHeader="true" Height="400px">
+                    <HeaderContent>
+                        <MudTh>Title</MudTh>
+                        <MudTh>Type</MudTh>
+                        <MudTh>Status</MudTh>
+                        <MudTh>Chunks</MudTh>
+                        <MudTh>Uploaded</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Title">
+                            <MudText Typo="Typo.body2" Style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                @context.Title
+                            </MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@context.FileName</MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Type">
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default">@context.Jurisdiction/@context.TaxType</MudChip>
+                        </MudTd>
+                        <MudTd DataLabel="Status">
+                            <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(context.Status)">@context.StatusText</MudChip>
+                        </MudTd>
+                        <MudTd DataLabel="Chunks">@(context.ChunkCount?.ToString() ?? "-")</MudTd>
+                        <MudTd DataLabel="Uploaded">
+                            <MudText Typo="Typo.caption">@context.CreatedAt.LocalDateTime.ToString("g")</MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Actions">
+                            <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small" 
+                                           OnClick="@(() => CopyToClipboard(context.DocumentId.ToString()))" 
+                                           Title="Copy Document ID" />
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Info">No documents uploaded yet.</MudAlert>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private IBrowserFile? _selectedFile;
+    private string _title = "";
+    private string _jurisdiction = "";
+    private string _taxType = "";
+    private string _version = "";
+    private DateTime? _effectiveDate;
+    private string _uploadedBy = "";
+    
+    private bool _uploading;
+    private bool _loadingDocs;
+    private DocumentUploadResponse? _uploadResult;
+    private List<DocumentDto>? _documents;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshDocumentsAsync();
+    }
+
+    private void OnFileSelected(IBrowserFile file)
+    {
+        _selectedFile = file;
+        if (string.IsNullOrEmpty(_title))
+        {
+            _title = Path.GetFileNameWithoutExtension(file.Name);
+        }
+    }
+
+    private async Task UploadAsync()
+    {
+        if (_selectedFile == null) return;
+
+        _uploading = true;
+        _uploadResult = null;
+        StateHasChanged();
+
+        try
+        {
+            await using var stream = _selectedFile.OpenReadStream(maxAllowedSize: 100 * 1024 * 1024); // 100MB max
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            ms.Position = 0;
+
+            var result = await ApiClient.UploadAsync(
+                ms,
+                _selectedFile.Name,
+                _selectedFile.ContentType,
+                _title,
+                _jurisdiction,
+                _taxType,
+                _version,
+                _effectiveDate.HasValue ? new DateTimeOffset(_effectiveDate.Value) : null,
+                _uploadedBy);
+
+            if (result.IsSuccess)
+            {
+                _uploadResult = result.Data;
+                Snackbar.Add("Document uploaded successfully!", Severity.Success);
+                ClearForm();
+                await RefreshDocumentsAsync();
+            }
+            else
+            {
+                Snackbar.Add($"Upload failed: {result.ErrorMessage}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Upload failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+
+    private async Task RefreshDocumentsAsync()
+    {
+        _loadingDocs = true;
+        StateHasChanged();
+
+        try
+        {
+            var result = await ApiClient.GetDocumentsAsync();
+            if (result.IsSuccess)
+            {
+                _documents = result.Data;
+            }
+            else
+            {
+                Snackbar.Add($"Failed to load documents: {result.ErrorMessage}", Severity.Warning);
+            }
+        }
+        finally
+        {
+            _loadingDocs = false;
+        }
+    }
+
+    private void ClearForm()
+    {
+        _selectedFile = null;
+        _title = "";
+        _jurisdiction = "";
+        _taxType = "";
+        _version = "";
+        _effectiveDate = null;
+        _uploadedBy = "";
+    }
+
+    private async Task CopyToClipboard(string text)
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+        Snackbar.Add("Copied to clipboard!", Severity.Info);
+    }
+
+    private Color GetStatusColor(int status) => status switch
+    {
+        0 => Color.Default,
+        1 => Color.Warning,
+        2 => Color.Success,
+        3 => Color.Error,
+        _ => Color.Default
+    };
+
+    private string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F1} MB";
+    }
+}
+
