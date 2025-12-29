@@ -1,6 +1,6 @@
 # TaxCopilot
 
-A production-ready Retrieval-Augmented Generation (RAG) system for tax document analysis built with .NET 8, OpenAI, Azure AI Search, and a modern Blazor UI.
+A production-ready Retrieval-Augmented Generation (RAG) system for tax document analysis built with .NET 8, OpenAI, Azure AI Search, and a modern Blazor UI. The responses should not be consider a professional opinion. The responses should not be used to make real life financial decisions.
 
 ![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4?style=flat&logo=dotnet)
 ![Blazor](https://img.shields.io/badge/Blazor-Server-512BD4?style=flat&logo=blazor)
